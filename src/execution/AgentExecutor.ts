@@ -93,6 +93,7 @@ export const AGENT_TYPES = [
   'antigravity',
   'opencode',
   'command-code',
+  'dsh',
 ] as const
 
 export type AgentType = (typeof AGENT_TYPES)[number]
@@ -182,6 +183,11 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     'read-only': ['--permission-mode', 'plan'],
     'safe-edit': ['--yolo', '--permission-mode', 'auto-accept'],
     yolo: ['--yolo'],
+  },
+  dsh: {
+    'read-only': [],
+    'safe-edit': [],
+    yolo: [],
   },
 }
 
@@ -616,6 +622,8 @@ export class AgentExecutor {
         return this.buildOpenCodeArgs(params, envOverrides, await isOpenCodeV2())
       case 'command-code':
         return this.buildCommandCodeArgs(params, envOverrides)
+      case 'dsh':
+        return this.buildDshArgs(params, envOverrides)
     }
   }
 
@@ -666,6 +674,7 @@ export class AgentExecutor {
       case 'opencode':
         flags.push('--variant', this.config.effort)
         break
+      case 'dsh':
       case 'cursor':
       case 'gemini':
         throw new Error(
@@ -710,6 +719,49 @@ export class AgentExecutor {
       formattedPrompt,
     ]
     return { command: 'command-code', args, envOverrides }
+  }
+
+  private buildDshArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
+    const formattedPrompt = this.formatSystemUserPrompt(params)
+    const dshBin = process.env['DSH_PATH'] || 'dsh'
+    const args: string[] = []
+
+    // Mount user desktop patch if it exists, so configured provider routes (CIC, Tencent, etc.) work
+    const desktopPatch = path.join(os.homedir(), '.dsh', 'profiles', 'desktop', 'cordis.patch.yml')
+    if (fs.existsSync(desktopPatch)) {
+      args.push('--patch', desktopPatch)
+    }
+
+    args.push('--profile', 'headless', '--json', formattedPrompt)
+
+    // Automatically resolve refs from ~/.dsh/.credentials.yaml into env if not already in env
+    const injectedEnv: EnvOverrides = { ...envOverrides }
+    const localBin = path.join(os.homedir(), '.local', 'bin')
+    const currentPath = process.env['PATH'] || ''
+    if (!currentPath.includes(localBin)) {
+      injectedEnv['PATH'] = `${localBin}:${currentPath}`
+    }
+    try {
+      const credPath = path.join(os.homedir(), '.dsh', '.credentials.yaml')
+      if (fs.existsSync(credPath)) {
+        const content = fs.readFileSync(credPath, 'utf8')
+        const refsMatch = content.match(/refs:\n([\s\S]*?)(?=\n\S|$)/)
+        if (refsMatch && refsMatch[1]) {
+          for (const line of refsMatch[1].split('\n')) {
+            const m = line.match(/^\s*([A-Za-z0-9_]+):\s*(.*)$/)
+            if (m && m[1] && m[2]) {
+              const key = m[1].trim()
+              const val = m[2].trim().replace(/^['"]|['"]$/g, '')
+              if (!process.env[key]) {
+                injectedEnv[key] = val
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+
+    return { command: dshBin, args, envOverrides: injectedEnv }
   }
 
   private buildClaudeArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {

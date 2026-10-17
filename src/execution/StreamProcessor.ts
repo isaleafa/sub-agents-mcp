@@ -15,6 +15,8 @@ export class StreamProcessor {
   private geminiResponseParts: string[] = []
   private codexAgentMessages: string[] = []
   private openCodeResponseParts: string[] = []
+  private dshResponseParts: string[] = []
+  private dshSessionId?: string
 
   constructor(private readonly agentType: AgentType) {}
 
@@ -54,6 +56,8 @@ export class StreamProcessor {
         return this.processOpenCodeLine(json)
       case 'command-code':
         return this.processCommandCodeLine(json)
+      case 'dsh':
+        return this.processDshLine(json)
       default: {
         const unsupportedAgentType: never = agentType
         throw new Error(`Unsupported agent type: ${String(unsupportedAgentType)}`)
@@ -73,6 +77,19 @@ export class StreamProcessor {
         type: 'result',
         result: this.openCodeResponseParts.join(''),
         status: 'success',
+      }
+      return true
+    }
+
+    if (this.agentType === 'dsh') {
+      const text = this.dshResponseParts.length > 0
+        ? this.dshResponseParts.join('')
+        : output.trim()
+      this.resultJson = {
+        type: 'result',
+        result: text,
+        status: 'success',
+        ...(this.dshSessionId && { session_id: this.dshSessionId }),
       }
       return true
     }
@@ -378,6 +395,38 @@ export class StreamProcessor {
     }
 
     return result
+  }
+
+  private processDshLine(json: Record<string, unknown>): boolean {
+    if (json['type'] === 'session' && typeof json['sessionId'] === 'string') {
+      this.dshSessionId = json['sessionId']
+      return false
+    }
+
+    if (json['type'] === 'text' && typeof json['text'] === 'string') {
+      this.dshResponseParts.push(json['text'])
+      return false
+    }
+
+    if (json['type'] === 'final' && typeof json['text'] === 'string') {
+      const result: Record<string, unknown> = {
+        type: 'result',
+        result: json['text'],
+        status: 'success',
+      }
+      if (this.dshSessionId) {
+        result['session_id'] = this.dshSessionId
+      }
+      this.resultJson = result
+      return true
+    }
+
+    if (json['type'] === 'error') {
+      this.resultJson = this.normalizeError(json)
+      return true
+    }
+
+    return false
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

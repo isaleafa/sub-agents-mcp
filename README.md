@@ -109,8 +109,9 @@ Set `AGENT_TYPE` to the backend you already use:
 | `antigravity` | Google Antigravity | `agy` 1.1.12+ |
 | `gemini` | Gemini CLI (compatibility) | `gemini` |
 | `opencode` | OpenCode | `opencode` |
+| `dsh` | DeepSeek Harness | `dsh` |
 
-The selected CLI must be installed and configured before the MCP server starts.
+The selected CLI must be installed and configured before the MCP server starts. DSH automatically mounts `~/.dsh/profiles/desktop/cordis.patch.yml` and injects credentials from `~/.dsh/.credentials.yaml`.
 
 GLM and Kimi require `CLI_API_KEY` in the MCP server environment. Other backends use the CLI's existing authentication.
 

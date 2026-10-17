@@ -534,6 +534,31 @@ describe('StreamProcessor', () => {
     })
   })
 
+  describe('DSH parsing', () => {
+    it('should process dsh session and final lines', () => {
+      processor = new StreamProcessor('dsh')
+      expect(processor.processLine('{"type":"session","sessionId":"session-abc-123"}')).toBe(false)
+      expect(processor.processLine('{"type":"final","text":"Task done successfully"}')).toBe(true)
+
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Task done successfully',
+        status: 'success',
+        session_id: 'session-abc-123',
+      })
+    })
+
+    it('should fall back to complete output for dsh', () => {
+      processor = new StreamProcessor('dsh')
+      expect(processor.processCompleteOutput('Raw plain text output from dsh')).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Raw plain text output from dsh',
+        status: 'success',
+      })
+    })
+  })
+
   describe('Edge cases', () => {
     it('should process terminal lines with leading/trailing whitespace', () => {
       const jsonWithWhitespace = '  {"type":"result","result":"value"}  '
